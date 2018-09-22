@@ -1,0 +1,8 @@
+*.o
+*.S
+*.mk
+bin/*
+lib/*
+sbin/*
+testbin/*
+
