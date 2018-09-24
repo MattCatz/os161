@@ -7,6 +7,7 @@
 #include <lib.h>
 #include <synch.h>
 #include <thread.h>
+#include <queue.h>
 #include <curthread.h>
 #include <machine/spl.h>
 
@@ -111,9 +112,9 @@ lock_create(const char *name)
 		kfree(lock);
 		return NULL;
 	}
-	
-	// add stuff here as needed
-	
+
+	lock->owner = NULL;
+	DEBUG(DB_THREADS, "Created lock : %s\n", lock->name);	
 	return lock;
 }
 
@@ -122,36 +123,56 @@ lock_destroy(struct lock *lock)
 {
 	assert(lock != NULL);
 
-	// add stuff here as needed
-	
+	assert(lock->owner == NULL);
+
 	kfree(lock->name);
 	kfree(lock);
 }
 
 void
 lock_acquire(struct lock *lock)
-{
-	// Write this
+{	
+	int spl;
 
-	(void)lock;  // suppress warning until code gets written
+	spl = splhigh();
+
+	assert(lock != NULL);
+
+	DEBUG(DB_THREADS, "Trying to acquire lock : %s\n", lock->name);	
+	while (lock->owner != NULL) {
+		thread_sleep(lock);
+	}
+
+	lock->owner = curthread;
+	splx(spl);	
 }
 
 void
 lock_release(struct lock *lock)
 {
-	// Write this
+	int spl;
 
-	(void)lock;  // suppress warning until code gets written
+	spl = splhigh();
+	
+	assert(lock != NULL);
+	assert(lock_do_i_hold(lock));
+
+	DEBUG(DB_THREADS, "Releasing lock : %s\n", lock->name);	
+	lock->owner = NULL;
+
+	thread_wakeup(lock);
+
+	splx(spl);
 }
 
 int
 lock_do_i_hold(struct lock *lock)
 {
-	// Write this
-
-	(void)lock;  // suppress warning until code gets written
-
-	return 1;    // dummy until code gets written
+	assert(lock != NULL);
+	if (lock->owner == curthread) {
+		return 1;
+	}
+	return 0;
 }
 
 ////////////////////////////////////////////////////////////
@@ -174,8 +195,12 @@ cv_create(const char *name)
 		kfree(cv);
 		return NULL;
 	}
-	
-	// add stuff here as needed
+
+	cv->waitlist = q_create(1);
+	if (cv->waitlist == NULL) {
+		kfree(cv);
+		kfree(cv->name);
+	}
 	
 	return cv;
 }
@@ -184,33 +209,67 @@ void
 cv_destroy(struct cv *cv)
 {
 	assert(cv != NULL);
+	assert(cv->name != NULL);
+	assert(cv->waitlist != NULL);
 
-	// add stuff here as needed
-	
 	kfree(cv->name);
+	q_destroy(cv->waitlist);
 	kfree(cv);
 }
 
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int spl;
+
+	assert(cv != NULL);
+	assert(lock != NULL);
+
+	spl = splhigh();
+		
+	lock_release(lock);
+	//q_addtail(cv->waitlist, curthread);
+	thread_sleep(cv);
+	lock_acquire(lock);
+	
+	splx(spl);	
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int spl;
+
+	assert(cv != NULL);
+	assert(lock != NULL);
+	assert(cv->waitlist != NULL);
+
+	spl = splhigh();
+	//if (!q_empty(cv->waitlist)) {
+	//	next = q_remhead(cv->waitlist);
+	//	thread_wakeup_next(next);
+	//}
+	thread_wakeup_next(cv);
+
+	splx(spl);
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int spl;
+
+	assert(cv != NULL);
+	assert(lock != NULL);
+	assert(cv->waitlist != NULL);
+
+	spl = splhigh();
+
+	//while (!q_empty(cv->waitlist)) {
+	//	thread_wakeup_next(lock);
+	//}
+
+	thread_wakeup(cv);
+
+	splx(spl);
 }

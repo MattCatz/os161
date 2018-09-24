@@ -5,6 +5,9 @@
 #ifndef _SYNCH_H_
 #define _SYNCH_H_
 
+typedef struct thread thread;
+typedef struct queue queue;
+
 /*
  * Dijkstra-style semaphore.
  * Operations:
@@ -50,8 +53,7 @@ void              sem_destroy(struct semaphore *);
 
 struct lock {
 	char *name;
-	// add what you need here
-	// (don't forget to mark things volatile as needed)
+	thread *owner;
 };
 
 struct lock *lock_create(const char *name);
@@ -89,8 +91,7 @@ void         lock_destroy(struct lock *);
 
 struct cv {
 	char *name;
-	// add what you need here
-	// (don't forget to mark things volatile as needed)
+	queue *waitlist;
 };
 
 struct cv *cv_create(const char *name);
