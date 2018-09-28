@@ -5,8 +5,10 @@
 #ifndef _SYNCH_H_
 #define _SYNCH_H_
 
+/*
+ * Forward declaration of thread
+ */
 typedef struct thread thread;
-typedef struct queue queue;
 
 /*
  * Dijkstra-style semaphore.
@@ -42,13 +44,15 @@ void              sem_destroy(struct semaphore *);
  *    lock_do_i_hold - Return true if the current thread holds the lock; 
  *                   false otherwise.
  *
- * These operations must be atomic. You get to write them.
+ * These operations are atomic.
  *
- * When the lock is created, no thread should be holding it. Likewise,
+ * When the lock is created, no thread is holding it. Likewise,
  * when the lock is destroyed, no thread should be holding it.
  *
  * The name field is for easier debugging. A copy of the name is made
  * internally.
+ *
+ * The owner field is a pointer to thread currently holding the lock.
  */
 
 struct lock {
@@ -80,7 +84,7 @@ void         lock_destroy(struct lock *);
  * in. Note that under normal circumstances the same lock should be used
  * on all operations with any particular CV.
  *
- * These operations must be atomic. You get to write them.
+ * These operations are atomic.
  *
  * These CVs are expected to support Mesa semantics, that is, no
  * guarantees are made about scheduling.
@@ -91,7 +95,6 @@ void         lock_destroy(struct lock *);
 
 struct cv {
 	char *name;
-	queue *waitlist;
 };
 
 struct cv *cv_create(const char *name);

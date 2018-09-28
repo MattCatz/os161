@@ -7,7 +7,6 @@
 #include <lib.h>
 #include <synch.h>
 #include <thread.h>
-#include <queue.h>
 #include <curthread.h>
 #include <machine/spl.h>
 
@@ -113,6 +112,7 @@ lock_create(const char *name)
 		return NULL;
 	}
 
+	// Notice the lock is created with no owner
 	lock->owner = NULL;
 	DEBUG(DB_THREADS, "Created lock : %s\n", lock->name);	
 	return lock;
@@ -121,12 +121,13 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
+	// We assert here to punish people who do stupid things
 	assert(lock != NULL);
-
 	assert(lock->owner == NULL);
 
 	kfree(lock->name);
 	kfree(lock);
+	DEBUG(DB_THREADS, "Destroyed lock : %s\n", lock->name);	
 }
 
 void
@@ -144,6 +145,7 @@ lock_acquire(struct lock *lock)
 	}
 
 	lock->owner = curthread;
+	DEBUG(DB_THREADS, "Thread %s acquired lock %s\n", curthread->t_name, lock->name);
 	splx(spl);	
 }
 
@@ -154,10 +156,11 @@ lock_release(struct lock *lock)
 
 	spl = splhigh();
 	
+	// We assert here to punish people who do stupid things
 	assert(lock != NULL);
 	assert(lock_do_i_hold(lock));
 
-	DEBUG(DB_THREADS, "Releasing lock : %s\n", lock->name);	
+	DEBUG(DB_THREADS, "Thread %s releasing lock %s\n", curthread->t_name, lock->name);	
 	lock->owner = NULL;
 
 	thread_wakeup(lock);
@@ -194,27 +197,22 @@ cv_create(const char *name)
 	if (cv->name==NULL) {
 		kfree(cv);
 		return NULL;
-	}
-
-	cv->waitlist = q_create(1);
-	if (cv->waitlist == NULL) {
-		kfree(cv);
-		kfree(cv->name);
-	}
+	}	
 	
+	DEBUG(DB_THREADS, "Created CV : %s\n", cv->name);	
 	return cv;
 }
 
 void
 cv_destroy(struct cv *cv)
 {
+	// We assert here to punish people who do stupid things
 	assert(cv != NULL);
 	assert(cv->name != NULL);
-	assert(cv->waitlist != NULL);
 
 	kfree(cv->name);
-	q_destroy(cv->waitlist);
 	kfree(cv);
+	DEBUG(DB_THREADS, "Destroyed CV: %s\n", cv->name);	
 }
 
 void
@@ -222,14 +220,20 @@ cv_wait(struct cv *cv, struct lock *lock)
 {
 	int spl;
 
+	// We assert here to punish people who do stupid things
 	assert(cv != NULL);
 	assert(lock != NULL);
 
 	spl = splhigh();
 		
+	// The idea here is to release the lock and sleep until
+	// we are woken up, telling us that our conditional value
+	// has been met. Once woken up we try to aquire our lock
+	// again
 	lock_release(lock);
-	//q_addtail(cv->waitlist, curthread);
+	DEBUG(DB_THREADS, "Thread %s sleeping on CV %s", curthread->t_name, cv->name);
 	thread_sleep(cv);
+	DEBUG(DB_THREADS, "Thread %s waking on CV %s", curthread->t_name, cv->name);
 	lock_acquire(lock);
 	
 	splx(spl);	
@@ -240,15 +244,13 @@ cv_signal(struct cv *cv, struct lock *lock)
 {
 	int spl;
 
+	// We assert here to punish people who do stupid things
 	assert(cv != NULL);
 	assert(lock != NULL);
-	assert(cv->waitlist != NULL);
 
 	spl = splhigh();
-	//if (!q_empty(cv->waitlist)) {
-	//	next = q_remhead(cv->waitlist);
-	//	thread_wakeup_next(next);
-	//}
+
+	DEBUG(DB_THREADS, "Thread %s waking next on CV %s", curthread->t_name, cv->name);
 	thread_wakeup_next(cv);
 
 	splx(spl);
@@ -259,17 +261,15 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 {
 	int spl;
 
+	// We assert here to punish people who do stupid things
 	assert(cv != NULL);
 	assert(lock != NULL);
-	assert(cv->waitlist != NULL);
 
 	spl = splhigh();
 
-	//while (!q_empty(cv->waitlist)) {
-	//	thread_wakeup_next(lock);
-	//}
-
+	DEBUG(DB_THREADS, "Thread %s waking everyone on CV %s", curthread->t_name, cv->name);
 	thread_wakeup(cv);
 
 	splx(spl);
 }
+

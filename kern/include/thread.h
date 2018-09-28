@@ -90,6 +90,10 @@ void thread_sleep(const void *addr);
  */
 void thread_wakeup(const void *addr);
 
+/*
+ * Cause the next thread found in the queue sleeping on the specified
+ * address to wake up. Interrupts must be disabled.
+ */
 void thread_wakeup_next(const void *addr);
 
 /*

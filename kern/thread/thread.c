@@ -560,7 +560,7 @@ thread_wakeup_next(const void *addr)
 			 */
 			result = make_runnable(t);
 			assert(result==0);
-			//break;
+			break;
 		}
 	}
 
