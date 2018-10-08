@@ -18,7 +18,7 @@
 #include <lib.h>
 #include <test.h>
 #include <thread.h>
-
+#include <synch.h>
 
 /*
  *
@@ -45,21 +45,30 @@
 #define NMICE 2
 
 #define TRUE 1
-#define False 0
-#define MAXTIME 10
+#define FALSE 0
+#define MAXTIME 1
 #define MAXEAT 10
 
 
-volatile bool all_dishes_available;
-semaphore *done;
-semaphore *mutex; // Kitchen
-semaphore *dish_mutex;
-semaphore *cats_queue;
-semaphore *mice_queue;
-volatile int cats_wait_count;
-volatile int mice_wait_count;
-volatile int cat_magic_number;
-volatile int mouse_magic_number;
+static struct semaphore *done;
+static struct semaphore *mutex; // Kitchen
+static struct semaphore *dish_mutex;
+static struct semaphore *cats_queue;
+static struct semaphore *mice_queue;
+static volatile int all_dishes_available;
+static volatile int cats_wait_count;
+static volatile int mice_wait_count;
+static volatile unsigned int cat_magic_number;
+static volatile unsigned int mouse_magic_number;
+static volatile int first_cat;
+static volatile int first_mouse;
+static volatile int mice_eating;
+static volatile int cats_none_eating;
+static volatile int dish_one_busy;
+static volatile int dish_two_busy;
+static volatile int done_eating;
+static volatile int cats_eating;
+static volatile int mice_eating;
 
 /*
  *
@@ -67,107 +76,132 @@ volatile int mouse_magic_number;
  *
  */
  
-void hungry_cat() {
+void hungry_cat(long unsigned id) {
+  int mydish;
+
+  kprintf("Cat %ld got hungry\n",id);
   assert(mutex->count == 1 || mutex->count == 0);
   P(mutex); // cats get kitchen
     
   if (all_dishes_available == TRUE) {
-    // With the mutex at an intial value of 1 garuntees no race condition for all_dishes_available
     all_dishes_available = FALSE;
-    V(cat_queue); // let the first cat in
-    assert(cat_queue->count == 1);
+    kprintf("Cat %ld is first\n", id);
+    V(cats_queue); // let the first cat in
+    //assert(cats_queue->count == 1);
   }
   
   cats_wait_count++;
   V(mutex);  // each cat/mouse lets the next one in
              // The last one leaves the lock for the first cat/mouse
   
-  P(cat_queue);
+  P(cats_queue);
   // at this point everyone but the first cat should be in the queue.
-  
-  if (first_cat == true) {
+  if (first_cat == TRUE) {
+    first_cat = FALSE;
     // sync check that there is only one first cat
     assert(0xDEADBEEF == cat_magic_number++);
-    first_cat = false;
-    P(mutex); // We either get this first try or well have to wait for the last mouse to signal us.
-    // Hold the door open for all cats
-    for (int i = cat_wait_count; i > 0; i--) {
-      V(cat_queue);
+    if (cats_wait_count > 0) {
+      V(cats_queue);
     }
   }
+  V(cats_queue);
   
-  kprintf(“Cat in the kitchen.\n”); /*cat name */
+  kprintf("Cat %ld in the kitchen.\n", id); /* cat name */
   
   P(dish_mutex); /*protect shared variables*/
-
-  kprint(“Cat eating.\n”); /* cat name */
-  clocksleep(1); /* enjoys food */
-  kprint(“Finish eating.\n”); /* done. */
+    if (dish_one_busy  == FALSE) {
+      dish_one_busy = TRUE;
+      mydish = 1;
+    } else {
+      assert(dish_two_busy == FALSE);
+      dish_two_busy = TRUE;
+      mydish = 2;
+    }
+  
+  kprintf("Cat %ld eating bowl %d.\n", id, mydish); /* cat name */
+  clocksleep(random() % MAXTIME); /* enjoys food */
+  kprintf("Cat %ld finished eating.\n", id); /* done. */
   assert(mice_eating == 0);
-  
-  cats_wait_count--;
-  V(dish_mutex);
-  V(cat_queue);
-  
-  assert(cats_wait_count >= 0);
-  
-  if(cats_wait_count == 0) {
+
+    if (mydish == 1) {
+      dish_one_busy = FALSE;
+    } else {
+      assert(mydish == 2);
+      dish_two_busy = FALSE;
+    }
+
+  P(mutex);
+  if(mydish == 1 && !dish_two_busy) {
+    kprintf("Cat %ld is last\n", id);
     // sync check to make sure there is only one last cat
     assert(0xDEADBEEF == --cat_magic_number);
     all_dishes_available = TRUE;
-    V(mutex);
+    first_cat = TRUE;
+    cat_magic_number = 0xDEADBEEF;
+    done_eating = FALSE;
   }
+  V(mutex);
+  V(dish_mutex);
 }
 
-void hungry_mouse() {
+void hungry_mouse(unsigned long id) {
+  kprintf("Mouse %ld got hungry, mutex entering %d\n",id,  mutex->count);
   assert(mutex->count == 1 || mutex->count == 0);
-  P(mutex); // get in mouse line
-  
+  P(mutex); // Mice get kitchen
+    
   if (all_dishes_available == TRUE) {
-    // With the mutex at an intial value of 1 garuntees no race condition for all_dishes_available
     all_dishes_available = FALSE;
-    V(mouse_queue); // let the first cat in
-    assert(mouse_queue->count == 1);
+    kprintf("Mouse %ld is first\n", id);
+    V(mice_queue); // let the first cat in
+    //assert(cats_queue->count == 1);
   }
   
-  mouse_wait_count++;
+  mice_wait_count++;
   V(mutex);  // each cat/mouse lets the next one in
              // The last one leaves the lock for the first cat/mouse
   
-  P(mouse_queue);
+  P(mice_queue);
   // at this point everyone but the first cat should be in the queue.
   
-  if (first_mouse == true) {
-    // Synch check to make sure there is only one first mouse
+  if (first_mouse == TRUE) {
+    // sync check that there is only one first mouse
     assert(0xDEADBEEF == mouse_magic_number++);
-    first_mouse = false;
-    P(mutex); //We either get this first try or well have to wait for the last cat to signal us.
-    // Hold the door open for all cats
-    for (int i = mouse_wait_count; i > 0; i--) {
-      V(mouse_queue);
+    first_mouse = FALSE;
+    if (mice_wait_count > 0) {
+      V(mice_queue);
     }
   }
   
-  kprintf(“Mouse in the kitchen.\n”); /*cat name */
+  kprintf("Mouse %ld in the kitchen.\n", id); /*cat name */
   
   P(dish_mutex); /*protect shared variables*/
+  P(mice_queue);
   mice_eating++;
-  kprint(“mouse eating.\n”); /* cat name */
+  V(mice_queue);
+  kprintf("Mouse %ld eating.\n", id); /* cat name */
   clocksleep(1); /* enjoys food */
-  kprint(“Finish eating.\n”); /* done. */
+  kprintf("Mouse %ld finished eating.\n", id); /* done. */
+  
+  P(mice_queue); 
   mice_eating--;
-  cats_wait_count--;
+  mice_wait_count--;
+  V(mice_queue);
   V(dish_mutex);
-  V(cat_queue);
   
-  assert(mouse_wait_count >= 0);
-  
-  if(mouse_wait_count == 0) {
-    // sync check to make sure there is only one last mouse
+  kprintf("Mouse %ld done, remaining mice %d\n", id, cats_wait_count);
+ 
+  P(mutex); 
+  P(mice_queue);
+  if(mice_wait_count == 0) {
+    kprintf("Mouse %ld is last mutex %d\n", id, mutex->count);
+    // sync check to make sure there is only one last cat
     assert(0xDEADBEEF == --mouse_magic_number);
     all_dishes_available = TRUE;
-    V(mutex);
+    first_mouse = TRUE;
+    mouse_magic_number = 0xDEADBEEF;
   }
+  V(mice_queue);
+  V(mutex);
 }
 
 
@@ -185,16 +219,17 @@ void hungry_mouse() {
 
 static
 void
-catsem(semaphore * sem_cat, unsigned long cat_id)
+catsem(void* unused, unsigned long cat_id)
 {
-  assert(sem_cat);
-  assert(cat_id > -1);
+	
+  (void)unused;
+  (void)cat_id;  
   
   int i;
   
   for (i = 0; i < MAXEAT; i++) {
     clocksleep(random() % MAXTIME);
-    hungry_cat();
+    hungry_cat(cat_id);
   }
   
   // Signal parent thread that we are done
@@ -215,20 +250,20 @@ catsem(semaphore * sem_cat, unsigned long cat_id)
 
 static
 void
-mousesem(semaphore * sem_mouse, unsigned long mouse_id)
+mousesem(void * unused, unsigned long mouse_id)
 {
-  assert(sem_cat);
-  assert(cat_id > -1);
   
+  (void) unused;
+  (void) mouse_id;
   int i;
   
   for (i = 0; i < MAXEAT; i++) {
     clocksleep(random() % MAXTIME);
-    hungry_mouse();
+    hungry_mouse(mouse_id);
   }
   
   // Signal parent thread that we are done
-  V(done)
+  V(done);
 }
 
 
@@ -250,26 +285,36 @@ mousesem(semaphore * sem_mouse, unsigned long mouse_id)
 int
 catmousesem(int nargs, char ** args) {
 
+  (void) nargs;
+  (void) args;
+
   int index, error, threads_spawned;
   
-  sem_create(done, 0);
-  sem_create(mutex, 1);
-  sem_create(dish_mutex, NFOODBOWLS);
-  sem_create(cats_queue, 0);
-  sem_create(mice_queue, 0);
+  done = sem_create("done", 0);
+  mutex = sem_create("kitchen", 1);
+  dish_mutex = sem_create("dish", 2);
+  cats_queue = sem_create("queue of cats", 0);
+  mice_queue = sem_create("queue of mice", 0);
   
-  all_dishes_available = true;
+  all_dishes_available = TRUE;
   cats_wait_count = 0;
   mice_wait_count = 0;
   cat_magic_number = 0xDEADBEEF;
   mouse_magic_number = 0xDEADBEEF;
-  
+  first_cat = TRUE;
+  first_mouse = TRUE;
+  mice_eating = 0;
+  cats_eating = 0;
+  done_eating = FALSE;
+  threads_spawned = 0;
+  dish_one_busy = FALSE;
+  dish_two_busy = FALSE; 
   /*
    * Start NCATS catsem() threads.
    */
   
   for (index = 0; index < NCATS; index++) {
-    error = thread_fork("catsem Thread", sem_cat, index, catsem, NULL);
+    error = thread_fork("catsem Thread", NULL, index, catsem, NULL);
     threads_spawned++;
   
     if (error) {
@@ -281,8 +326,8 @@ catmousesem(int nargs, char ** args) {
    * Start NMICE mousesem() threads.
    */
   
-  for (index = 0; index < NMICE; index++) {
-    error = thread_fork("mousesem Thread", sem_mouse, index, mousesem, NULL);
+  for (index = 0; index < 0; index++) {
+    error = thread_fork("mousesem Thread", NULL, index, mousesem, NULL);
     threads_spawned++;
   
     if (error) {
@@ -290,8 +335,10 @@ catmousesem(int nargs, char ** args) {
     }
   }
   
-  for (int i = 0; i < threads_spawned; i++) {
-    P(wait);
+  kprintf("Made %d threads\n", threads_spawned);
+
+  for (index = 0; index < threads_spawned; index++) {
+    P(done);
   }
   
   kprintf("All threads done.\n");
