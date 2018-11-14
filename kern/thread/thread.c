@@ -61,7 +61,11 @@ thread_create(const char *name)
 	
 	// If you add things to the thread structure, be sure to initialize
 	// them here.
-	
+
+	// Becuase we do not have a PID manager right not we will just set 
+	// this to 0.	
+	thread->t_pid = 0;
+
 	return thread;
 }
 
@@ -232,7 +236,7 @@ int
 thread_fork(const char *name, 
 	    void *data1, unsigned long data2,
 	    void (*func)(void *, unsigned long),
-	    struct thread **ret)
+	    pid_t *childpid)
 {
 	struct thread *newguy;
 	int s, result;
@@ -306,14 +310,11 @@ thread_fork(const char *name,
 	splx(s);
 
 	/*
-	 * Return new thread structure if it's wanted.  Note that
-	 * using the thread structure from the parent thread should be
-	 * done only with caution, because in general the child thread
-	 * might exit at any time.
+	 * Return new thread's process ID if it's wanted.
+	 * Currently there is no PID manager so this will
+	 * always be 0.
 	 */
-	if (ret != NULL) {
-		*ret = newguy;
-	}
+	childpid = newguy->t_pid;
 
 	return 0;
 

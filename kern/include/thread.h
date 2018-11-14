@@ -7,7 +7,7 @@
 
 /* Get machine-dependent stuff */
 #include <machine/pcb.h>
-
+#include <types.h>
 
 struct addrspace;
 
@@ -37,6 +37,9 @@ struct thread {
 	 * and is manipulated by the virtual filesystem (VFS) code.
 	 */
 	struct vnode *t_cwd;
+
+	/* Holds the id of the process */
+	pid_t t_pid;
 };
 
 /* Call once during startup to allocate data structures. */
@@ -61,7 +64,7 @@ void thread_shutdown(void);
 int thread_fork(const char *name, 
 		void *data1, unsigned long data2, 
 		void (*func)(void *, unsigned long),
-		struct thread **ret);
+		pid_t *childpid);
 
 /*
  * Cause the current thread to exit.

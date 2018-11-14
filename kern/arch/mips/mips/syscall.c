@@ -72,7 +72,13 @@ mips_syscall(struct trapframe *tf)
 		err = sys_reboot(tf->tf_a0);
 		break;
 
-	    /* Add stuff here */
+	    case SYS_getpid:
+		err = sys_getpid(&retval);
+		break;
+ 
+	    case SYS_fork:
+		err = sys_fork(tf, &retval);
+		break;
  
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
@@ -107,15 +113,20 @@ mips_syscall(struct trapframe *tf)
 	assert(curspl==0);
 }
 
+/* Note this stuff goes here because it is machine dependent
+   hence the md prefix */
 void
 md_forkentry(struct trapframe *tf)
 {
 	/*
-	 * This function is provided as a reminder. You need to write
-	 * both it and the code that calls it.
-	 *
-	 * Thus, you can trash it and do things another way if you prefer.
-	 */
-
-	(void)tf;
+ 	* Succeed and return 0.
+ 	*/
+	tf->tf_v0 = 0;
+	tf->tf_a3 = 0;
+	
+	/*
+ 	* Advance the PC.
+ 	*/
+	tf->tf_epc += 4;
+	mips_usermode(tf);
 }
