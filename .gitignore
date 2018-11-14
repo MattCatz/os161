@@ -1,9 +1,8 @@
 *.o
 *.S
 *.mk
-*.swp
 bin/*
 lib/*
 sbin/*
 testbin/*
-ASST*
+
